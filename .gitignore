@@ -40,3 +40,7 @@ Thumbs.db
 /Makefile
 /cmake_install.cmake
 /lmp
+
+#luci stuff
+.idea/*
+cmake/cmake-build-debug/*
