@@ -8,9 +8,9 @@ lammps testing 1 water molecules
 1 bond types
 1 angle types
 
--5.0 5.0 xlo xhi
--5.0 5.0 ylo yhi
--5.0 5.0 zlo zhi
+-3.0 3.0 xlo xhi
+-3.0 3.0 ylo yhi
+-3.0 3.0 zlo zhi
 
 Masses
 

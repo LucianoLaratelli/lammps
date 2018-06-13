@@ -45,7 +45,7 @@ AngleTable3D::AngleTable3D(LAMMPS *lmp) : Angle(lmp)
 {
   writedata = 0;
   ntables = 0;
-  tables = NULL;
+  tables = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -70,7 +70,7 @@ void AngleTable3D::compute(int eflag, int vflag)
   double eangle,f1[3],f3[3];
   double delx1,dely1,delz1,delx2,dely2,delz2;
   double rsq1,rsq2,r1,r2,c,s,a,a11,a12,a22;
-  double theta,u,mdu; //mdu: minus du, -du/dx=f
+  double theta,u,mdu_theta, mdu_r1, mdu_r2; //mdu: minus du, -du/dx=f
 
   eangle = 0.0;
   if (eflag || vflag) ev_setup(eflag,vflag);
@@ -122,11 +122,12 @@ void AngleTable3D::compute(int eflag, int vflag)
     // tabulated force & energy
 
     theta = acos(c);
-    uf_lookup(type,theta,u,mdu);
+    uf_lookup(type,theta,r1, r2, u,mdu_theta, mdu_r1, mdu_r2);
 
     if (eflag) eangle = u;
 
-    a = mdu * s;
+
+    a = mdu_theta * s;
     a11 = a*c / rsq1;
     a12 = -a / (r1*r2);
     a22 = a*c / rsq2;
@@ -198,8 +199,8 @@ void AngleTable3D::settings(int narg, char **arg)
   memory->sfree(tables);
 
   if (allocated) {
-     memory->destroy(setflag);
-     memory->destroy(tabindex);
+    memory->destroy(setflag);
+    memory->destroy(tabindex);
   }
   allocated = 0;
 
@@ -222,30 +223,24 @@ void AngleTable3D::coeff(int narg, char **arg)
   int me;
   MPI_Comm_rank(world,&me);
   tables = (Table *)
-    memory->srealloc(tables,(ntables+1)*sizeof(Table),"angle:tables");
+      memory->srealloc(tables,(ntables+1)*sizeof(Table),"angle:tables");
   Table *tb = &tables[ntables];
   null_table(tb);
   if (me == 0) read_table(tb,arg[1],arg[2]);
   bcast_table(tb);
 
   // error check on table parameters
-
+  if(tb->angle_low < 0.0 || tb->angle_high > 180.0)
+  {
+    error->one(FLERR, "Angle must be between 0.0 and 180.0");
+  } else if (tb->r1_low < TINY || tb->r2_low < TINY) {
+    error->one(FLERR, "Minimum r distance is too small");
+  }
+  //end error check
   if (tb->ninput <= 1) error->one(FLERR,"Invalid angle table length");
 
-  double alo,ahi;
-  alo = tb->afile[0];
-  ahi = tb->afile[tb->ninput-1];
-  if (fabs(alo-0.0) > TINY || fabs(ahi-180.0) > TINY)
-    error->all(FLERR,"Angle table must range from 0 to 180 degrees");
 
-  // convert theta from degrees to radians
 
-  for (int i = 0; i < tb->ninput; i++){
-    //tb->afile[i] *= MY_PI/180.0;
-    //tb->fafile[i] *= 180.0/MY_PI;
-  }
-
-  // spline read-in and compute a,e,f vectors within table
 
   spline_table(tb);
   compute_table(tb);
@@ -333,29 +328,24 @@ double AngleTable3D::single(int type, int i1, int i2, int i3)
 
 void AngleTable3D::null_table(Table *tb)
 {
-  tb->afile = tb->efile = tb->fafile = NULL;
   tb->e2file = tb->f2file = NULL;
   tb->ang = tb->e = tb->de = NULL;
-  tb->f = tb->df = tb->e2 = tb->f2 = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
 
 void AngleTable3D::free_table(Table *tb)
 {
-  memory->destroy(tb->afile);
-  memory->destroy(tb->efile);
-  memory->destroy(tb->fafile);
   memory->destroy(tb->e2file);
   memory->destroy(tb->f2file);
 
   memory->destroy(tb->ang);
   memory->destroy(tb->e);
   memory->destroy(tb->de);
-  memory->destroy(tb->f);
   memory->destroy(tb->df);
   memory->destroy(tb->e2);
   memory->destroy(tb->f2);
+  free(tb->energies_forces);
 }
 
 /* ----------------------------------------------------------------------
@@ -375,6 +365,8 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
     error->one(FLERR,str);
   }
 
+  tb->input_count = tb->ninput_theta * tb->ninput_r2 * tb->ninput_r1 * 4;
+
   // loop until section found with matching keyword
 
   while (1) {
@@ -387,30 +379,39 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
     fgets(line,MAXLINE,fp);                         // no match, skip section
     param_extract(tb,line);
     fgets(line,MAXLINE,fp);
-    for (int i = 0; i < tb->ninput; i++) fgets(line,MAXLINE,fp);
+    for (int i = 0; i < (tb->input_count/4); i++) fgets(line,MAXLINE,fp);
   }
 
-  // read args on 2nd line of section
-  // allocate table arrays for file values
+  tb->energies_forces = (double*)(malloc(sizeof(double*) * tb->input_count)) ;
+
+  int theta_offset = tb->ninput_r1*tb->ninput_r2*4;
+  int r1_offset = tb->ninput_r2*4;
+  int r2_offset = 4;
 
   fgets(line,MAXLINE,fp);
   param_extract(tb,line);
-  memory->create(tb->afile,tb->ninput,"angle:afile");
-  memory->create(tb->efile,tb->ninput,"angle:efile");
-  memory->create(tb->r1file,tb->ninput,"angle:afile");
-  memory->create(tb->r2file,tb->ninput,"angle:efile");
-  memory->create(tb->fafile,tb->ninput,"angle:afile");
-  memory->create(tb->fr1file,tb->ninput,"angle:efile");
-  memory->create(tb->fr2file,tb->ninput,"angle:afile");
 
-  // read a,e,f table values from file
+  double temp_a, temp_r1, temp_r2;
 
   int itmp;
   fgets(line,MAXLINE,fp);
-  for (int i = 0; i < tb->ninput; i++) {
-    fgets(line,MAXLINE,fp);
-    sscanf(line,"%d %lg %lg %lg %lg %lg %lg %lg ",
-      &itmp,&tb->afile[i],&tb->r1file[i],&tb->r2file[i],&tb->efile[i],&tb->fafile[i], &tb->fr1file[i], &tb->fr2file[i]);
+  for(int i = 0; i < tb->ninput_theta; i++)
+  {
+    for(int j = 0; j < tb->ninput_r1; j++)
+    {
+        for(int k = 0; k < tb->ninput_r2; k++)
+        {
+          fgets(line,MAXLINE,fp);
+          int index = i*theta_offset + j * r1_offset + k*r2_offset;
+          double & u       = tb->energies_forces[index + 0];
+          double & f_theta = tb->energies_forces[index + 1];
+          double & f_r1    = tb->energies_forces[index + 2];
+          double & f_r2    = tb->energies_forces[index + 3];
+
+          sscanf(line,"%d %lg %lg %lg %lg %lg %lg %lg ",
+                 &itmp,&temp_a,&temp_r1,&temp_r2,&u,&f_theta,&f_r1,&f_r2);
+        }
+    }
   }
 
   fclose(fp);
@@ -421,6 +422,7 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
    this function sets these values in e2file,f2file
 ------------------------------------------------------------------------- */
 
+/*
 void AngleTable3D::spline_table(Table *tb)
 {
   memory->create(tb->e2file,tb->ninput,"angle:e2file");
@@ -433,26 +435,33 @@ void AngleTable3D::spline_table(Table *tb)
   if (tb->fpflag == 0) {
     tb->fplo = (tb->fafile[1] - tb->fafile[0]) / (tb->afile[1] - tb->afile[0]);
     tb->fphi = (tb->fafile[tb->ninput-1] - tb->fafile[tb->ninput-2]) /
-      (tb->afile[tb->ninput-1] - tb->afile[tb->ninput-2]);
+        (tb->afile[tb->ninput-1] - tb->afile[tb->ninput-2]);
   }
 
   double fp0 = tb->fplo;
   double fpn = tb->fphi;
   spline(tb->afile,tb->fafile,tb->ninput,fp0,fpn,tb->f2file);
 }
+*/
 
 /* ----------------------------------------------------------------------
    compute a,e,f vectors from splined values
 ------------------------------------------------------------------------- */
 
+/*
 void AngleTable3D::compute_table(Table *tb)
 {
   // delta = table spacing in angle for N-1 bins
 
   int tlm1 = tablength-1;
-  tb->delta = MY_PI / tlm1;
-  tb->invdelta = 1.0/tb->delta;
-  tb->deltasq6 = tb->delta*tb->delta / 6.0;
+
+  tb->delta_theta = (tb->afile[tlm1] - tb->afile[0]) / tlm1;
+  tb->delta_r1 = (tb->r1file[tlm1] - tb->r1file[0]) / tlm1;
+  tb->delta_r2 = (tb->r2file[tlm1] - tb->r2file[0]) / tlm1;
+
+  tb->inv_delta_theta = 1.0 / tb->delta_theta;
+  tb->inv_delta_r1 = 1.0 / tb->delta_r1;
+  tb->inv_delta_r2 = 1.0 / tb->delta_r2;
 
   // N-1 evenly spaced bins in angle from 0 to PI
   // ang,e,f = value at lower edge of bin
@@ -462,29 +471,11 @@ void AngleTable3D::compute_table(Table *tb)
   memory->create(tb->ang,tablength,"angle:ang");
   memory->create(tb->e,tablength,"angle:e");
   memory->create(tb->de,tlm1,"angle:de");
-  memory->create(tb->f,tablength,"angle:f");
   memory->create(tb->df,tlm1,"angle:df");
   memory->create(tb->e2,tablength,"angle:e2");
   memory->create(tb->f2,tablength,"angle:f2");
-
-  double a;
-  for (int i = 0; i < tablength; i++) {
-    a = i*tb->delta;
-    tb->ang[i] = a;
-          tb->e[i] = splint(tb->afile,tb->efile,tb->e2file,tb->ninput,a);
-          tb->f[i] = splint(tb->afile,tb->fafile,tb->f2file,tb->ninput,a);
-  }
-
-  for (int i = 0; i < tlm1; i++) {
-    tb->de[i] = tb->e[i+1] - tb->e[i];
-    tb->df[i] = tb->f[i+1] - tb->f[i];
-  }
-
-  double ep0 = - tb->f[0];
-  double epn = - tb->f[tlm1];
-  spline(tb->ang,tb->e,tablength,ep0,epn,tb->e2);
-  spline(tb->ang,tb->f,tablength,tb->fplo,tb->fphi,tb->f2);
 }
+ */
 
 /* ----------------------------------------------------------------------
    extract attributes from parameter line in table section
@@ -500,22 +491,29 @@ void AngleTable3D::param_extract(Table *tb, char *line)
 
   char *word = strtok(line," \t\n\r\f");
   while (word) {
-    if (strcmp(word,"N") == 0) {
+    if (strcmp(word,"THETA") == 0) {
       word = strtok(NULL," \t\n\r\f");
-      tb->ninput = atoi(word);
-    } else if (strcmp(word,"FP") == 0) {
-      tb->fpflag = 1;
+      tb->ninput_theta = atoi(word);
       word = strtok(NULL," \t\n\r\f");
-      tb->fplo = atof(word);
+      tb->angle_low = atof(word);
       word = strtok(NULL," \t\n\r\f");
-      tb->fphi = atof(word);
-      tb->fplo *= (180.0/MY_PI)*(180.0/MY_PI);
-      tb->fphi *= (180.0/MY_PI)*(180.0/MY_PI);
-    } else if (strcmp(word,"EQ") == 0) {
+      tb->angle_high = atof(word);
+    } else if (strcmp(word,"R1") == 0) {
       word = strtok(NULL," \t\n\r\f");
-      tb->theta0 = atof(word);
+      tb->ninput_r1 = atoi(word);
+      word = strtok(NULL," \t\n\r\f");
+      tb->r1_low = atof(word);
+      word = strtok(NULL," \t\n\r\f");
+      tb->r1_high = atof(word);
+    } else if (strcmp(word,"R2") == 0) {
+      word = strtok(NULL," \t\n\r\f");
+      tb->ninput_r2 = atoi(word);
+      word = strtok(NULL," \t\n\r\f");
+      tb->r2_low = atof(word);
+      word = strtok(NULL," \t\n\r\f");
+      tb->r2_high = atof(word);
     } else {
-      error->one(FLERR,"Invalid keyword in angle table parameters");
+      error->one(FLERR,"Invalid keyword in angle table 3D parameters");
     }
     word = strtok(NULL," \t\n\r\f");
   }
@@ -536,14 +534,10 @@ void AngleTable3D::bcast_table(Table *tb)
   int me;
   MPI_Comm_rank(world,&me);
   if (me > 0) {
-    memory->create(tb->afile,tb->ninput,"angle:afile");
-    memory->create(tb->efile,tb->ninput,"angle:efile");
-    memory->create(tb->fafile,tb->ninput,"angle:fafile");
+    memory->create(tb->energies_forces,tb->input_count,"angle:energies_forces");
   }
 
-  MPI_Bcast(tb->afile,tb->ninput,MPI_DOUBLE,0,world);
-  MPI_Bcast(tb->efile,tb->ninput,MPI_DOUBLE,0,world);
-  MPI_Bcast(tb->fafile,tb->ninput,MPI_DOUBLE,0,world);
+  MPI_Bcast(tb->energies_forces,tb->input_count,MPI_DOUBLE,0,world);
 
   MPI_Bcast(&tb->fpflag,1,MPI_INT,0,world);
   if (tb->fpflag) {
@@ -562,7 +556,7 @@ void AngleTable3D::bcast_table(Table *tb)
  * functional values"
  */
 void AngleTable3D::spline(double *x, double *y, int n,
-                       double yp1, double ypn, double *y2)
+                          double yp1, double ypn, double *y2)
 {
   int i,k;
   double p,qn,sig,un;
@@ -609,7 +603,7 @@ double AngleTable3D::splint(double *xa, double *ya, double *y2a, int n, double x
   a = (xa[khi]-x) / h;
   b = (x-xa[klo]) / h;
   y = a*ya[klo] + b*ya[khi] +
-    ((a*a*a-a)*y2a[klo] + (b*b*b-b)*y2a[khi]) * (h*h)/6.0;
+      ((a*a*a-a)*y2a[klo] + (b*b*b-b)*y2a[khi]) * (h*h)/6.0;
   return y;
 }
 
@@ -617,37 +611,61 @@ double AngleTable3D::splint(double *xa, double *ya, double *y2a, int n, double x
    calculate potential u and force f at angle x
 ------------------------------------------------------------------------- */
 
-void AngleTable3D::uf_lookup(int type, double x, double &u, double &fa, double &fr1, double &fr2)
+void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, double &u, double &mdu_theta, double &mdu_r1, double &mdu_r2)
 {
-  if (!ISFINITE(x)) {
+  if (!ISFINITE(theta)) {
     error->one(FLERR,"Illegal angle in angle style table");
   }
 
-  double fraction,a,b;
+  double fraction_theta, fraction_r1, fraction_r2;
   const Table *tb = &tables[tabindex[type]];
-  int itable = static_cast<int> (x * tb->invdelta);
+  int itable_theta = static_cast<int> ((theta - tb->angle_low) * tb->inv_delta_theta);
+  int itable_r1 = static_cast<int> ((r1 - tb->r1_low) * tb->inv_delta_r1);
+  int itable_r2 = static_cast<int> ((r2 - tb->r2_low) * tb->inv_delta_r2 );
 
-  if (itable < 0) itable = 0;
-  if (itable >= tablength) itable = tablength-1;
+  if (itable_theta < 0) itable_theta = 0;
+  if (itable_r1 < 0) itable_r1 = 0;
+  if (itable_r2 < 0) itable_r2 = 0;
+  // why we grabbing these sizeofs here?
+  // well, we could have figured out a way to compute the size of the arrays
+  // a "smart" way, but this was easier. Subtract by one so you don't overflow the buffer
+  // you big dummy
+
+  if (itable_theta >= tablength) itable_theta = (sizeof(tb->afile)/sizeof(tb->afile[0])) - 1;
+  if (itable_r1 >= tablength) itable_r1 = (sizeof(tb->r1file)/sizeof(tb->r1file[0])) - 1;
+  if (itable_r2 >= tablength) itable_r2 = (sizeof(tb->r2file)/sizeof(tb->r2file[0])) - 1;
 
   if (tabstyle == LINEAR) {
-    fraction = (x - tb->ang[itable]) * tb->invdelta;
-    u = tb->e[itable] + fraction*tb->de[itable];
-    fa = tb->fa_splint[itable] + fraction*tb->df[itable];
-    fr1 = tb->fr1_splint[itable] + fraction*tb->df[itable];
-    fr2 = tb->fr2_splint[itable] + fraction*tb->df[itable];
-  } else if (tabstyle == SPLINE) {
-    fraction = (x - tb->ang[itable]) * tb->invdelta;
-
-    b = (x - tb->ang[itable]) * tb->invdelta;
-    a = 1.0 - b;
-    u = a * tb->e[itable] + b * tb->e[itable+1] +
-      ((a*a*a-a)*tb->e2[itable] + (b*b*b-b)*tb->e2[itable+1]) *
-      tb->deltasq6;
-    f = a * tb->f[itable] + b * tb->f[itable+1] +
-      ((a*a*a-a)*tb->f2[itable] + (b*b*b-b)*tb->f2[itable+1]) *
-      tb->deltasq6;
+    fraction_theta = (theta - tb->ang[itable_theta]) * tb->inv_delta_theta;
+    fraction_r1 = (r1 - tb->r1file[itable_r1]) * tb->inv_delta_r1;
+    fraction_r2 = (r2 - tb->r2file[itable_r2]) * tb->inv_delta_r2;
+    u = (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->afile[itable_theta] * tb->r1file[itable_r1] * tb->r2file[itable_r2];
+    mdu_theta = tb->fa_splint[itable] + fraction*tb->df[itable];
+    mdu_r1 = tb->fr1_splint[itable] + fraction*tb->df[itable];
+    mdu_r2 = tb->fr2_splint[itable] + fraction*tb->df[itable];
+  } else {
+    error->one(FLERR,"ILLEGAL METHOD OF INTERPOLATION: LINEAR-ONLY FOR NOW BUB");
   }
+  /*
+else if (tabstyle == SPLINE) {
+  fraction = (theta - tb->ang[itable]) * tb->invdelta;
+
+  b = (theta - tb->ang[itable]) * tb->invdelta;
+  a = 1.0 - b;
+  u = a * tb->e[itable] + b * tb->e[itable+1] +
+    ((a*a*a-a)*tb->e2[itable] + (b*b*b-b)*tb->e2[itable+1]) *
+    tb->deltasq6;
+  mdu_theta = a * tb->f[itable] + b * tb->f[itable+1] +
+    ((a*a*a-a)*tb->f2[itable] + (b*b*b-b)*tb->f2[itable+1]) *
+    tb->deltasq6;
+  mdu_r1 = a * tb->f[itable] + b * tb->f[itable+1] +
+      ((a*a*a-a)*tb->f2[itable] + (b*b*b-b)*tb->f2[itable+1]) *
+          tb->deltasq6;
+  mdu_r2 = a * tb->f[itable] + b * tb->f[itable+1] +
+      ((a*a*a-a)*tb->f2[itable] + (b*b*b-b)*tb->f2[itable+1]) *
+          tb->deltasq6;
+}
+   */
 }
 
 /* ----------------------------------------------------------------------
@@ -676,7 +694,7 @@ void AngleTable3D::u_lookup(int type, double x, double &u)
     b = (x - tb->ang[itable]) * tb->invdelta;
     a = 1.0 - b;
     u = a * tb->e[itable] + b * tb->e[itable+1] +
-      ((a*a*a-a)*tb->e2[itable] + (b*b*b-b)*tb->e2[itable+1]) *
-      tb->deltasq6;
+        ((a*a*a-a)*tb->e2[itable] + (b*b*b-b)*tb->e2[itable+1]) *
+            tb->deltasq6;
   }
 }
