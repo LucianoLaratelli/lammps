@@ -212,6 +212,7 @@ void AngleTable3D::settings(int narg, char **arg)
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
 
+//AKA MAIN LOOP
 void AngleTable3D::coeff(int narg, char **arg)
 {
   if (narg != 3) error->all(FLERR,"Illegal angle_coeff command");
@@ -237,10 +238,7 @@ void AngleTable3D::coeff(int narg, char **arg)
     error->one(FLERR, "Minimum r distance is too small");
   }
   //end error check
-  if (tb->ninput <= 1) error->one(FLERR,"Invalid angle table length");
-
-
-
+  if (tb->input_count <= 1) error->one(FLERR,"Invalid combined table length (ntheta * nr1 * nr2 * 4)");
 
   spline_table(tb);
   compute_table(tb);
@@ -319,8 +317,11 @@ double AngleTable3D::single(int type, int i1, int i2, int i3)
   if (c < -1.0) c = -1.0;
 
   double theta = acos(c);
-  double u=0.0;
-  u_lookup(type,theta,u);
+  double u = 0.0;
+  double dummy = 0.0;
+  double dummy2 = 0.0;
+  double dummy3 = 0.0;
+  uf_lookup(type,theta, r1, r2, u, dummy, dummy2, dummy3);
   return u;
 }
 
@@ -368,19 +369,22 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
 
   // loop until section found with matching keyword
 
-    printf("ENTERING WHILE LOOP\n");
   while (1) {
-      printf("THE LINE WE WANT%s\n", line);
     if (fgets(line,MAXLINE,fp) == NULL)
       error->one(FLERR,"Did not find keyword in table file");
     if (strspn(line," \t\n") == strlen(line)) continue;    // blank line
     if (line[0] == '#') continue;                          // comment
     char *word = strtok(line," \t\n\r");
     if (strcmp(word,keyword) == 0) break;           // matching keyword
+    else {
+        error->one(FLERR, "YOU'RE A BIG DUMMY || THIS CODE SHOULD NOT EXECUTE");
+    }
+  /*
     fgets(line,MAXLINE,fp);                         // no match, skip section
     param_extract(tb,line);
     fgets(line,MAXLINE,fp);
-    //for (int i = 0; i < (tb->input_count/4); i++) fgets(line,MAXLINE,fp);
+    for (int i = 0; i < (tb->input_count/4); i++) fgets(line,MAXLINE,fp);
+   */
   }
   fgets(line,MAXLINE,fp);
   param_extract(tb,line);
@@ -407,12 +411,7 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
         for(int k = 0; k < tb->ninput_r2; k++)
         {
           fgets(line,MAXLINE,fp);
-          printf("%s\n", line);
           int index = i*theta_offset + j * r1_offset + k*r2_offset;
-          printf("THETA OFFSET %d\n", theta_offset);
-          printf("R1 OFFSET %d\n", r1_offset);
-          printf("R2 OFFSET %d\n", r2_offset);
-          printf("INDEX %d\n", index);
           double & u       = tb->energies_forces[index + 0];
           double & f_theta = tb->energies_forces[index + 1];
           double & f_r1    = tb->energies_forces[index + 2];
@@ -420,7 +419,6 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
 
           sscanf(line,"%d %lg %lg %lg %lg %lg %lg %lg ",
                  &itmp,&temp_a,&temp_r1,&temp_r2,&u,&f_theta,&f_r1,&f_r2);
-          printf("%lf %lf %lf %lf", u, f_theta, f_r1, f_r2);
         }
     }
   }
@@ -434,7 +432,7 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
 
 void AngleTable3D::spline_table(Table *tb)
 {
-/*
+    /*
   memory->create(tb->e2file,tb->ninput,"angle:e2file");
   memory->create(tb->f2file,tb->ninput,"angle:f2file");
 
@@ -451,7 +449,7 @@ void AngleTable3D::spline_table(Table *tb)
   double fp0 = tb->fplo;
   double fpn = tb->fphi;
   spline(tb->afile,tb->fafile,tb->ninput,fp0,fpn,tb->f2file);
-*/
+     */
 }
 
 /* ----------------------------------------------------------------------
@@ -499,12 +497,9 @@ void AngleTable3D::param_extract(Table *tb, char *line)
   tb->fpflag = 0;
   tb->theta0 = 180.0;
 
-  printf("%s", line);
   char *word = strtok(line," \t\n\r\f");
-  printf("IN ANGLE 3D\n");
   while (word) {
     if (strcmp(word,"THETA") == 0) {
-        printf("%s\n", word);
       word = strtok(NULL," \t");
       tb->ninput_theta = atoi(word);
       word = strtok(NULL," \t");
@@ -512,7 +507,6 @@ void AngleTable3D::param_extract(Table *tb, char *line)
       word = strtok(NULL," \t");
       tb->angle_high = atof(word);
     } else if (strcmp(word,"R1") == 0) {
-        printf("IN R1%s\n", word);
       word = strtok(NULL," \t");
       tb->ninput_r1 = atoi(word);
       word = strtok(NULL," \t");
@@ -520,7 +514,6 @@ void AngleTable3D::param_extract(Table *tb, char *line)
       word = strtok(NULL," \t");
       tb->r1_high = atof(word);
     } else if (strcmp(word,"R2") == 0) {
-        printf("IN R2%s\n", word);
       word = strtok(NULL," \t");
       tb->ninput_r2 = atoi(word);
       word = strtok(NULL," \t");
@@ -528,7 +521,6 @@ void AngleTable3D::param_extract(Table *tb, char *line)
       word = strtok(NULL," \t");
       tb->r2_high = atof(word);
     } else {
-        printf("IN ELSE%s\n", word);
       error->one(FLERR,"Invalid keyword in angle table 3D parameters");
     }
     word = strtok(NULL," \t\n\r\f");
@@ -568,7 +560,7 @@ void AngleTable3D::bcast_table(Table *tb)
 
 /* "this routine stores an array, y2, with the second derivatives
  * of the interpolated function at the interpolated points, using
- * functional values"
+ * functional values" --Preston Moore, PhD
  */
 void AngleTable3D::spline(double *x, double *y, int n,
                           double yp1, double ypn, double *y2)
@@ -628,7 +620,6 @@ double AngleTable3D::splint(double *xa, double *ya, double *y2a, int n, double x
 
 void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, double &u, double &mdu_theta, double &mdu_r1, double &mdu_r2)
 {
-/*
   if (!ISFINITE(theta)) {
     error->one(FLERR,"Illegal angle in angle style table");
   }
@@ -642,23 +633,65 @@ void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, doubl
   if (itable_theta < 0) itable_theta = 0;
   if (itable_r1 < 0) itable_r1 = 0;
   if (itable_r2 < 0) itable_r2 = 0;
-  // why we grabbing these sizeofs here?
-  // well, we could have figured out a way to compute the size of the arrays
-  // a "smart" way, but this was easier. Subtract by one so you don't overflow the buffer
-  // you big dummy
 
-  if (itable_theta >= tablength) itable_theta = (sizeof(tb->afile)/sizeof(tb->afile[0])) - 1;
-  if (itable_r1 >= tablength) itable_r1 = (sizeof(tb->r1file)/sizeof(tb->r1file[0])) - 1;
-  if (itable_r2 >= tablength) itable_r2 = (sizeof(tb->r2file)/sizeof(tb->r2file[0])) - 1;
+  if (itable_theta >= tb->ninput_theta) itable_theta = tb->ninput_theta;
+  if (itable_r1 >= tb->ninput_r1 ) itable_r1 = tb->ninput_r1;
+  if (itable_r2 >= tb->ninput_r2 ) itable_r2 = tb->ninput_r2;
 
   if (tabstyle == LINEAR) {
-    fraction_theta = (theta - tb->ang[itable_theta]) * tb->inv_delta_theta;
-    fraction_r1 = (r1 - tb->r1file[itable_r1]) * tb->inv_delta_r1;
-    fraction_r2 = (r2 - tb->r2file[itable_r2]) * tb->inv_delta_r2;
-    u = (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->afile[itable_theta] * tb->r1file[itable_r1] * tb->r2file[itable_r2];
-    mdu_theta = tb->fa_splint[itable] + fraction*tb->df[itable];
-    mdu_r1 = tb->fr1_splint[itable] + fraction*tb->df[itable];
-    mdu_r2 = tb->fr2_splint[itable] + fraction*tb->df[itable];
+    fraction_theta = theta - (tb->angle_low + itable_theta * tb->delta_theta);
+    fraction_r1 = r1 - (tb->r1_low + itable_r1 * tb->delta_r1);
+    fraction_r2 = r2 - (tb->r2_low + itable_r2 * tb->delta_r2);
+
+    int index_000 = (itable_theta) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1) * tb-> ninput_r2 * 4 + (itable_r2) *4;
+    int index_001 = (itable_theta) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1) * tb-> ninput_r2 * 4 + (itable_r2 + 1) *4;
+    int index_010 = (itable_theta) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2) *4;
+    int index_011 = (itable_theta) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2 + 1) *4;
+    int index_100 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1) * tb-> ninput_r2 * 4 + (itable_r2) *4;
+    int index_101 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1) * tb-> ninput_r2 * 4 + (itable_r2 + 1) *4;
+    int index_110 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2) *4;
+    int index_111 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2 + 1) *4;
+
+    u = 0.0;
+    u+= (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000];
+    u+= (1-fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_001];
+    u+= (1-fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_010];
+    u+= (1-fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_011];
+    u+= (fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_100];
+    u+= (fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_101];
+    u+= (fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_110];
+    u+= (fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_111];
+
+    mdu_theta = 0.0;
+    mdu_theta+= (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000 + 1];
+    mdu_theta+= (1-fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_001 + 1];
+    mdu_theta+= (1-fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_010 + 1];
+    mdu_theta+= (1-fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_011 + 1];
+    mdu_theta+= (fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_100 + 1];
+    mdu_theta+= (fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_101 + 1];
+    mdu_theta+= (fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_110 + 1];
+    mdu_theta+= (fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_111 + 1];
+
+    mdu_r1 = 0.0;
+    mdu_r1+= (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000 + 2];
+    mdu_r1+= (1-fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_001 + 2];
+    mdu_r1+= (1-fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_010 +2];
+    mdu_r1+= (1-fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_011 +2];
+    mdu_r1+= (fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_100 +2];
+    mdu_r1+= (fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_101 +2];
+    mdu_r1+= (fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_110 +2];
+    mdu_r1+= (fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_111 +2];
+
+    mdu_r2 = 0.0;
+    mdu_r2+= (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000 +3];
+    mdu_r2+= (1-fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_001 +3];
+    mdu_r2+= (1-fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_010 +3];
+    mdu_r2+= (1-fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_011 +3];
+    mdu_r2+= (fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_100 +3];
+    mdu_r2+= (fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_101 +3];
+    mdu_r2+= (fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_110 +3];
+    mdu_r2+= (fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_111 +3];
+
   } else {
     error->one(FLERR,"ILLEGAL METHOD OF INTERPOLATION: LINEAR-ONLY FOR NOW BUB");
   }
