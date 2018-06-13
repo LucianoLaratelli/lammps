@@ -514,7 +514,7 @@ void AngleTable::param_extract(Table *tb, char *line)
     word = strtok(NULL," \t\n\r\f");
   }
 
-  if (tb->ninput == 0) error->one(FLERR,"Angle table parameters did not set N");
+  if (tb->ninput == 0) error->one(FLERR," YOINK Angle table parameters did not set N");
 }
 
 /* ----------------------------------------------------------------------

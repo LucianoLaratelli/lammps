@@ -365,11 +365,12 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
     error->one(FLERR,str);
   }
 
-  tb->input_count = tb->ninput_theta * tb->ninput_r2 * tb->ninput_r1 * 4;
 
   // loop until section found with matching keyword
 
+    printf("ENTERING WHILE LOOP\n");
   while (1) {
+      printf("THE LINE WE WANT%s\n", line);
     if (fgets(line,MAXLINE,fp) == NULL)
       error->one(FLERR,"Did not find keyword in table file");
     if (strspn(line," \t\n") == strlen(line)) continue;    // blank line
@@ -379,8 +380,12 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
     fgets(line,MAXLINE,fp);                         // no match, skip section
     param_extract(tb,line);
     fgets(line,MAXLINE,fp);
-    for (int i = 0; i < (tb->input_count/4); i++) fgets(line,MAXLINE,fp);
+    //for (int i = 0; i < (tb->input_count/4); i++) fgets(line,MAXLINE,fp);
   }
+  fgets(line,MAXLINE,fp);
+  param_extract(tb,line);
+
+  tb->input_count = tb->ninput_theta * tb->ninput_r2 * tb->ninput_r1 * 4;
 
   tb->energies_forces = (double*)(malloc(sizeof(double*) * tb->input_count)) ;
 
@@ -402,7 +407,12 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
         for(int k = 0; k < tb->ninput_r2; k++)
         {
           fgets(line,MAXLINE,fp);
+          printf("%s\n", line);
           int index = i*theta_offset + j * r1_offset + k*r2_offset;
+          printf("THETA OFFSET %d\n", theta_offset);
+          printf("R1 OFFSET %d\n", r1_offset);
+          printf("R2 OFFSET %d\n", r2_offset);
+          printf("INDEX %d\n", index);
           double & u       = tb->energies_forces[index + 0];
           double & f_theta = tb->energies_forces[index + 1];
           double & f_r1    = tb->energies_forces[index + 2];
@@ -410,11 +420,11 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
 
           sscanf(line,"%d %lg %lg %lg %lg %lg %lg %lg ",
                  &itmp,&temp_a,&temp_r1,&temp_r2,&u,&f_theta,&f_r1,&f_r2);
+          printf("%lf %lf %lf %lf", u, f_theta, f_r1, f_r2);
         }
     }
   }
 
-  fclose(fp);
 }
 
 /* ----------------------------------------------------------------------
@@ -422,9 +432,9 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
    this function sets these values in e2file,f2file
 ------------------------------------------------------------------------- */
 
-/*
 void AngleTable3D::spline_table(Table *tb)
 {
+/*
   memory->create(tb->e2file,tb->ninput,"angle:e2file");
   memory->create(tb->f2file,tb->ninput,"angle:f2file");
 
@@ -441,16 +451,16 @@ void AngleTable3D::spline_table(Table *tb)
   double fp0 = tb->fplo;
   double fpn = tb->fphi;
   spline(tb->afile,tb->fafile,tb->ninput,fp0,fpn,tb->f2file);
-}
 */
+}
 
 /* ----------------------------------------------------------------------
    compute a,e,f vectors from splined values
 ------------------------------------------------------------------------- */
 
-/*
 void AngleTable3D::compute_table(Table *tb)
 {
+/*
   // delta = table spacing in angle for N-1 bins
 
   int tlm1 = tablength-1;
@@ -474,8 +484,8 @@ void AngleTable3D::compute_table(Table *tb)
   memory->create(tb->df,tlm1,"angle:df");
   memory->create(tb->e2,tablength,"angle:e2");
   memory->create(tb->f2,tablength,"angle:f2");
-}
  */
+}
 
 /* ----------------------------------------------------------------------
    extract attributes from parameter line in table section
@@ -489,36 +499,41 @@ void AngleTable3D::param_extract(Table *tb, char *line)
   tb->fpflag = 0;
   tb->theta0 = 180.0;
 
+  printf("%s", line);
   char *word = strtok(line," \t\n\r\f");
+  printf("IN ANGLE 3D\n");
   while (word) {
     if (strcmp(word,"THETA") == 0) {
-      word = strtok(NULL," \t\n\r\f");
+        printf("%s\n", word);
+      word = strtok(NULL," \t");
       tb->ninput_theta = atoi(word);
-      word = strtok(NULL," \t\n\r\f");
+      word = strtok(NULL," \t");
       tb->angle_low = atof(word);
-      word = strtok(NULL," \t\n\r\f");
+      word = strtok(NULL," \t");
       tb->angle_high = atof(word);
     } else if (strcmp(word,"R1") == 0) {
-      word = strtok(NULL," \t\n\r\f");
+        printf("IN R1%s\n", word);
+      word = strtok(NULL," \t");
       tb->ninput_r1 = atoi(word);
-      word = strtok(NULL," \t\n\r\f");
+      word = strtok(NULL," \t");
       tb->r1_low = atof(word);
-      word = strtok(NULL," \t\n\r\f");
+      word = strtok(NULL," \t");
       tb->r1_high = atof(word);
     } else if (strcmp(word,"R2") == 0) {
-      word = strtok(NULL," \t\n\r\f");
+        printf("IN R2%s\n", word);
+      word = strtok(NULL," \t");
       tb->ninput_r2 = atoi(word);
-      word = strtok(NULL," \t\n\r\f");
+      word = strtok(NULL," \t");
       tb->r2_low = atof(word);
-      word = strtok(NULL," \t\n\r\f");
+      word = strtok(NULL," \t");
       tb->r2_high = atof(word);
     } else {
+        printf("IN ELSE%s\n", word);
       error->one(FLERR,"Invalid keyword in angle table 3D parameters");
     }
     word = strtok(NULL," \t\n\r\f");
   }
-
-  if (tb->ninput == 0) error->one(FLERR,"Angle table parameters did not set N");
+  //if (tb->ninput == 0) error->one(FLE RR,"Angle table parameters did not set N");
 }
 
 /* ----------------------------------------------------------------------
@@ -613,6 +628,7 @@ double AngleTable3D::splint(double *xa, double *ya, double *y2a, int n, double x
 
 void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, double &u, double &mdu_theta, double &mdu_r1, double &mdu_r2)
 {
+/*
   if (!ISFINITE(theta)) {
     error->one(FLERR,"Illegal angle in angle style table");
   }
@@ -665,15 +681,16 @@ else if (tabstyle == SPLINE) {
       ((a*a*a-a)*tb->f2[itable] + (b*b*b-b)*tb->f2[itable+1]) *
           tb->deltasq6;
 }
-   */
+*/
 }
+
 
 /* ----------------------------------------------------------------------
    calculate potential u at angle x
 ------------------------------------------------------------------------- */
-
 void AngleTable3D::u_lookup(int type, double x, double &u)
 {
+/*
   if (!ISFINITE(x)) {
     error->one(FLERR,"Illegal angle in angle style table");
   }
@@ -697,4 +714,5 @@ void AngleTable3D::u_lookup(int type, double x, double &u)
         ((a*a*a-a)*tb->e2[itable] + (b*b*b-b)*tb->e2[itable+1]) *
             tb->deltasq6;
   }
+ */
 }

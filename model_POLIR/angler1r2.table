@@ -1,11 +1,7 @@
 #Angle R1 R1 table for 3d interpolation: n angle r1 r2 u f_th f_r1 f_r2
 
 ANGLE1
-N 4
-R1
-N 3
-R2
-N 2
+THETA 4 103 106 R1 3 0.8 1.0 R2 2 1.2 1.3 
 
 1 103 .8 1.2
 2 104 .8 1.2
