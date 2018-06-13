@@ -3,9 +3,9 @@ boundary p p p #all periodic
 atom_style full
 timestep .1 # femtoseconds (1e-15 s)
 
-read_data single_water.xyz
-#replicate 2 1 1
-#read_data POLIR-post_100.init
+#read_data single_water.xyz
+#replicate 2 2 2
+read_data POLIR-post.init
 
 
 #SELF TABULATED DATA-- VDW AND ANGLE TABLE WORK
@@ -36,7 +36,7 @@ dump_modify Dump sort id
 dump_modify Dump scale no
 
 thermo_style multi
-thermo 1
+thermo 10000
 
 
 dump Forces all custom 1 forces.dump id type fx fy fz
@@ -58,7 +58,7 @@ fix dipoles_print all print 1 "$t $d" file total_dipoles.out screen no
 
 fix 4 all ave/correlate 1 1 1 v_total_chunk_dipole type full ave running file mu_correlated.out
 
-#fix run all nvt temp 10 300 1000
+#fix run all nvt temp 10 300 100
 fix run all nve
 run 200000
 write_data POLIR-post.init nocoeff

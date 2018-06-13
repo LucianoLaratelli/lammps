@@ -26,50 +26,59 @@ AngleStyle(table3D,AngleTable3D)
 namespace LAMMPS_NS {
 
 class AngleTable3D : public Angle {
- public:
-  AngleTable3D(class LAMMPS *);
-  virtual ~AngleTable3D();
-  virtual void compute(int, int);
-  void settings(int, char **);
-  void coeff(int, char **);
-  double equilibrium_angle(int);
-  void write_restart(FILE *);
-  void read_restart(FILE *);
-  double single(int, int, int, int);
+public:
+    AngleTable3D(class LAMMPS *);
+    virtual ~AngleTable3D();
+    virtual void compute(int, int);
+    void settings(int, char **);
+    void coeff(int, char **);
+    double equilibrium_angle(int);
+    void write_restart(FILE *);
+    void read_restart(FILE *);
+    double single(int, int, int, int);
 
- protected:
-  int tabstyle,tablength;
-  double *theta0;
+protected:
+    int tabstyle,tablength;
+    double *theta0;
 
-  struct Table {
-    int ninput,fpflag;
-    double fplo,fphi,theta0;
-    double *afile,*efile;
-    double *r1file, *r2file;
-    double *fafile, *fr1file, *fr2file;
-    double *e2file,*f2file;
-    double delta,invdelta,deltasq6;
-    double *ang,*e,*de,*f,*df,*e2,*f2;
-  };
+    struct Table {
+        int fpflag;
+        int ninput_theta, ninput_r1, ninput_r2,
+            ninput_e, ninput_f_theta, ninput_f_r1,
+            ninput_f_r2, ninput;
+        double angle_low, angle_high;
+        double r1_low, r1_high;
+        double r2_low, r2_high;
+        double fplo,fphi,theta0;
+        double * energies_forces;
+        double *e2file,*f2file;
+        int input_count;
+        double delta_theta, inv_delta_theta;
+        double delta_r1, inv_delta_r1;
+        double delta_r2, inv_delta_r2;
+        double *ang,*e,*de,*df,*e2,*f2;
+        double *fa_splint, *fr1_splint, *fr2_splint;
+    };
 
-  int ntables;
-  Table *tables;
-  int *tabindex;
+    int ntables;
+    Table *tables;
+    int *tabindex;
 
-  void allocate();
-  void null_table(Table *);
-  void free_table(Table *);
-  void read_table(Table *, char *, char *);
-  void bcast_table(Table *);
-  void spline_table(Table *);
-  void compute_table(Table *);
+    void allocate();
+    void null_table(Table *);
+    void free_table(Table *);
+    void read_table(Table *, char *, char *);
+    void bcast_table(Table *);
+    void spline_table(Table *);
+    void compute_table(Table *);
 
-  void param_extract(Table *, char *);
-  void spline(double *, double *, int, double, double, double *);
-  double splint(double *, double *, double *, int, double);
+    void param_extract(Table *, char *);
+    void spline(double *, double *, int, double, double, double *);
+    double splint(double *, double *, double *, int, double);
 
-  void uf_lookup(int, double, double &, double &, double &, double&);
-  void u_lookup(int, double, double &);
+    void uf_lookup(int , double , double , double , double &, double &, double &, double &);
+
+    void u_lookup(int, double, double &);
 };
 
 }
