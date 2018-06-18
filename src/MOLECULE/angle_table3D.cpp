@@ -165,15 +165,15 @@ void AngleTable3D::compute(int eflag, int vflag)
         // apply force to each of 2 atoms
 
         if (newton_bond || i1 < nlocal) {
-            f[i1][0] += delx1* fbond_r1;
-            f[i1][1] += dely1* fbond_r1;
-            f[i1][2] += delz1* fbond_r1;
+            f[i1][0] -= delx1* fbond_r1;
+            f[i1][1] -= dely1* fbond_r1;
+            f[i1][2] -= delz1* fbond_r1;
         }
 
         if (newton_bond || i2 < nlocal) {
-            f[i2][0] -= delx1*fbond_r1;
-            f[i2][1] -= dely1*fbond_r1;
-            f[i2][2] -= delz1*fbond_r1;
+            f[i2][0] += delx1*fbond_r1;
+            f[i2][1] += dely1*fbond_r1;
+            f[i2][2] += delz1*fbond_r1;
         }
 
         double fbond_r2 = mdu_r2/r2;
@@ -451,6 +451,20 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
 
                 sscanf(line, "%d %lg %lg %lg %lg %lg %lg %lg",
                        &itmp, &temp_a, &temp_r1, &temp_r2, &u, &f_theta, &f_r1, &f_r2);
+                //assert(index == (itmp*4));
+                assert(index == itmp);
+                if(index == 0)
+                {
+                    assert(temp_a == tb->angle_low);
+                    assert(temp_r1 == tb->r1_low);
+                    assert(temp_r2 == tb->r2_low);
+                }
+                else if(index == (tb->ninput_theta * tb->ninput_r1 * tb->ninput_r2 * 4))
+                {
+                    assert(temp_a == tb->angle_high);
+                    assert(temp_r1 == tb->r1_high);
+                    assert(temp_r2 == tb->r2_high);
+                }
                 //std::cout << index << std::endl;
                 //std::cout << line << std::endl;
                 //std::cout << i << " " << j << " " << k << std::endl;
@@ -654,25 +668,59 @@ void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, doubl
     int itable_r1 = static_cast<int> ((r1 - tb->r1_low) * tb->inv_delta_r1);
     int itable_r2 = static_cast<int> ((r2 - tb->r2_low) * tb->inv_delta_r2 );
 
+    /***** check boundaries for theta ******/
+    if (itable_theta < 0)
+    {
+     itable_theta = 0;
+     theta = tb->angle_low;
+     std::cerr << "WARNING: Reached bottom of table in theta, rolling itable_theta up to 0" << std::endl;
+    }
+    else if (itable_theta >= tb->ninput_theta)
+    {
+        itable_theta = tb->ninput_theta - 1;
+        theta = itable_theta * tb->delta_theta + tb->angle_low;
+        std::cerr << "WARNING: Reached end of table in theta, rolling back to max_theta - 1" << std::endl;
+    }
+    /***** check boundaries for r1 ******/
+    if (itable_r1 < 0)
+    {
+        itable_r1 = 0;
+        r1 = tb->r1_low;
+        std::cerr << "WARNING: Reached bottom of table in R1, rolling itable_r1 up to 0" << std::endl;
+    }
+    else if (itable_r1 >= tb->ninput_r1 )
+    {
+        itable_r1 = tb->ninput_r1 - 1;
+        r1 = itable_r1 * tb->delta_r1 + tb->r1_low;
+        std::cerr << "WARNING: Reached end of table in r1, rolling back to max_r1 - 1" << std::endl;
+    }
+    /***** check boundaries for r2 ******/
+    if (itable_r2 < 0)
+    {
+        itable_r2 = 0;
+        r2 = tb->r2_low;
+        std::cerr << "WARNING: Reached bottom of table in R2, rolling itable_r2 up to 0" << std::endl;
+    }
+    else if (itable_r2 >= tb->ninput_r2 )
+    {
+        itable_r2 = tb->ninput_r2 - 1;
+        r2 = itable_r2 * tb->delta_r2 + tb->r2_low;
+        std::cerr << "WARNING: Reached end of table in r2, rolling back to max_r2-1" << std::endl;
+    }
 
-    if (itable_theta < 0) itable_theta = 0;
-    if (itable_r1 < 0) itable_r1 = 0;
-    if (itable_r2 < 0) itable_r2 = 0;
-
-    if (itable_theta >= tb->ninput_theta) itable_theta = tb->ninput_theta;
-    if (itable_r1 >= tb->ninput_r1 ) itable_r1 = tb->ninput_r1;
-    if (itable_r2 >= tb->ninput_r2 ) itable_r2 = tb->ninput_r2;
-
-    //std::cout << tb->delta_theta << " " << tb->delta_r1 << " " << tb->delta_r2 << std::endl;
-    //std::cout << itable_theta << " " << itable_r1 << " " << itable_r2 << std::endl;
     using namespace std;
 
     if (tabstyle == LINEAR) {
-        fraction_theta = theta - (tb->angle_low + itable_theta * tb->delta_theta);
-        fraction_r1 = r1 - (tb->r1_low + itable_r1 * tb->delta_r1);
-        fraction_r2 = r2 - (tb->r2_low + itable_r2 * tb->delta_r2);
+        fraction_theta = (theta - (tb->angle_low + itable_theta * tb->delta_theta)) * tb->inv_delta_theta;
+        fraction_r1 = (r1 - (tb->r1_low + itable_r1 * tb->delta_r1)) * tb->inv_delta_r1;
+        fraction_r2 = (r2 - (tb->r2_low + itable_r2 * tb->delta_r2)) * tb->inv_delta_r2;
 
-        //cout << itable_theta << " " << itable_r1 << " " << itable_r2 << endl;
+        /*
+        cout << fraction_theta << " " << theta << " " << tb->angle_low + itable_theta * tb->delta_theta << endl;
+        cout << fraction_r1 << " " << r1 << " " << tb->r1_low + itable_r1 * tb->delta_r1 << endl;
+        cout << fraction_r2 << " " << r2 << " " << tb->r2_low + itable_r2 * tb->delta_r2 << endl;
+        exit(10000);
+         */
 
         int index_000 = (itable_theta)     * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1)     * tb-> ninput_r2 * 4 + (itable_r2)     * 4;
         int index_001 = (itable_theta)     * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1)     * tb-> ninput_r2 * 4 + (itable_r2 + 1) * 4;
@@ -682,15 +730,6 @@ void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, doubl
         int index_101 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1)     * tb-> ninput_r2 * 4 + (itable_r2 + 1) * 4;
         int index_110 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2)     * 4;
         int index_111 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2 + 1) * 4;
-
-        //std::cout << index_000 << " " << tb->energies_forces[index_000] << " " <<  tb->energies_forces[index_000+1] << " " << tb->energies_forces[index_000+2]  << " " << tb->energies_forces[index_000+3] << std::endl;
-        //std::cout << index_001 << " " << tb->energies_forces[index_001] << std::endl;
-        //std::cout << index_010 << " " << tb->energies_forces[index_010] << std::endl;
-        //std::cout << index_011 << " " << tb->energies_forces[index_011]  << std::endl;
-        //std::cout << index_100 << " " << tb->energies_forces[index_100]  << std::endl;
-        //std::cout << index_101 << " " << tb->energies_forces[index_101] << std::endl;
-        //std::cout << index_110 << " " << tb->energies_forces[index_110]  << std::endl;
-        //std::cout << index_111 << " " << tb->energies_forces[index_111] << std::endl;
 
         u = 0.0;
         u+= (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000];

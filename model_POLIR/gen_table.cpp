@@ -48,9 +48,12 @@ program_arguments set_args(std::vector<std::string>args)
 
   command_line_args.table_name = args.at(0);
   command_line_args.theta_count = std::stoi(args[1]);
-  command_line_args.theta_low = std::stod(args[2]) * M_PI / 180.0;
-  command_line_args.theta_high = std::stod(args[3]) * M_PI / 180.0;
-  command_line_args.theta_equil = std::stod(args[4]) * M_PI / 180.0;
+  //command_line_args.theta_low = std::stod(args[2]) * M_PI / 180.0;
+  //command_line_args.theta_high = std::stod(args[3]) * M_PI / 180.0;
+  //command_line_args.theta_equil = std::stod(args[4]) * M_PI / 180.0;
+  command_line_args.theta_low = std::stod(args[2]) ;
+  command_line_args.theta_high = std::stod(args[3]);
+  command_line_args.theta_equil = std::stod(args[4]);
   command_line_args.r1_count = std::stoi(args[5]);
   command_line_args.r1_low = std::stod(args[6]);
   command_line_args.r1_high = std::stod(args[7]);
@@ -58,7 +61,8 @@ program_arguments set_args(std::vector<std::string>args)
   command_line_args.r2_low = std::stod(args[9]);
   command_line_args.r2_high = std::stod(args[10]);
   command_line_args.r_equil = std::stod(args[11]);
-  command_line_args.theta_const = std::stod(args[12]) * pow((M_PI / 180.0),2);
+  //command_line_args.theta_const = std::stod(args[12]) * pow((M_PI / 180.0),2);
+  command_line_args.theta_const = std::stod(args[12]);
   command_line_args.r_const = std::stod(args[13]);
 
   double & theta_c = command_line_args.theta_count;
@@ -77,7 +81,7 @@ program_arguments set_args(std::vector<std::string>args)
 
 double energy(program_arguments user_args, double current_angle, double r1, double r2)
 {
-  double answer = user_args.theta_const * pow((current_angle-user_args.theta_equil),2);
+  double answer = user_args.theta_const * pow((current_angle - user_args.theta_equil),2);
   answer += user_args.r_const * pow((r1 - user_args.r_equil),2);
   answer += user_args.r_const * pow((r2 - user_args.r_equil),2);
   return answer;
@@ -123,13 +127,15 @@ int main(int argc, char ** argv)
 
   int count = 0;
 
-  for(double theta = user_args.theta_low; theta <= user_args.theta_high; theta += dtheta)
+  //below we add dx/2 to each of theta, r1, and r2 to account for the floating point error
+  //that accumulates over millions of double adds
+  for(double theta = user_args.theta_low; theta <= user_args.theta_high + dtheta/2; theta += dtheta)
   {
-    for(double r1 = user_args.r1_low; r1 <= user_args.r1_high; r1 += dr1)
+    for(double r1 = user_args.r1_low; r1 <= user_args.r1_high + dr1/2; r1 += dr1)
     {
-      for(double r2 = user_args.r2_low; r2 <= user_args.r2_high; r2 += dr2)
+      for(double r2 = user_args.r2_low; r2 <= user_args.r2_high + dr2/2; r2 += dr2)
       {
-        output_file << count << " " << theta << " "
+        output_file << count * 4 << " " << theta << " "
                     << std::setprecision(6) << r1 << " "
                     << std::setprecision(6) << r2 << " "
                     << std::setprecision(6) << energy(user_args, theta, r1, r2) << " "
