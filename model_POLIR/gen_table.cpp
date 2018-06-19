@@ -35,7 +35,7 @@ void print_help()
   cout << "r2 high (double) " << endl;
   cout << "r equil (double) " << endl;
   cout << "Two constants: " << endl;
-  cout << "theta const (double) (energy/angle^2)" << endl;
+  cout << "theta const (double) (energy/RADIANS^2)" << endl;
   cout << "r const (double) (energy/angstroms^2)" << endl;
 
 }
@@ -48,12 +48,9 @@ program_arguments set_args(std::vector<std::string>args)
 
   command_line_args.table_name = args.at(0);
   command_line_args.theta_count = std::stoi(args[1]);
-  //command_line_args.theta_low = std::stod(args[2]) * M_PI / 180.0;
-  //command_line_args.theta_high = std::stod(args[3]) * M_PI / 180.0;
-  //command_line_args.theta_equil = std::stod(args[4]) * M_PI / 180.0;
-  command_line_args.theta_low = std::stod(args[2]) ;
-  command_line_args.theta_high = std::stod(args[3]);
-  command_line_args.theta_equil = std::stod(args[4]);
+  command_line_args.theta_low = std::stod(args[2]) * M_PI / 180.0;
+  command_line_args.theta_high = std::stod(args[3]) * M_PI / 180.0;
+  command_line_args.theta_equil = std::stod(args[4]) * M_PI / 180.0;
   command_line_args.r1_count = std::stoi(args[5]);
   command_line_args.r1_low = std::stod(args[6]);
   command_line_args.r1_high = std::stod(args[7]);
@@ -61,7 +58,6 @@ program_arguments set_args(std::vector<std::string>args)
   command_line_args.r2_low = std::stod(args[9]);
   command_line_args.r2_high = std::stod(args[10]);
   command_line_args.r_equil = std::stod(args[11]);
-  //command_line_args.theta_const = std::stod(args[12]) * pow((M_PI / 180.0),2);
   command_line_args.theta_const = std::stod(args[12]);
   command_line_args.r_const = std::stod(args[13]);
 
@@ -79,6 +75,7 @@ program_arguments set_args(std::vector<std::string>args)
   return command_line_args;
 }
 
+/*
 double energy(program_arguments user_args, double current_angle, double r1, double r2)
 {
   double answer = user_args.theta_const * pow((current_angle - user_args.theta_equil),2);
@@ -97,6 +94,18 @@ double force_r(program_arguments user_args, double current_quantity)
 {
   double answer = 2.0 * user_args.r_const * (current_quantity - user_args.r_equil);
   return answer;
+}
+*/
+
+double energy(program_arguments user_args, double current_angle, double r1, double r2)
+{
+}
+
+double force_theta(program_arguments user_args, double current_quantity)
+{
+}
+double force_r(program_arguments user_args, double current_quantity)
+{
 }
   
 

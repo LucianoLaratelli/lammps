@@ -125,10 +125,13 @@ void AngleTable3D::compute(int eflag, int vflag)
         theta = acos(c);
         uf_lookup(type,theta,r1, r2, u, mdu_theta, mdu_r1, mdu_r2);
 
+
+
         if (eflag) eangle = u;
 
 
-        a = mdu_theta * s;
+        //a is negative mdu_theta because gen_table.cpp does the positive derivative
+        a = -mdu_theta * s;
         a11 = a*c / rsq1;
         a12 = -a / (r1*r2);
         a22 = a*c / rsq2;
@@ -191,6 +194,7 @@ void AngleTable3D::compute(int eflag, int vflag)
             f[i3][1] -= dely2*fbond_r2;
             f[i3][2] -= delz2*fbond_r2;
         }
+
 
         if (evflag) ev_tally(i1,i2,i3,nlocal,newton_bond,eangle,f1,f3,
                              delx1,dely1,delz1,delx2,dely2,delz2);
@@ -422,7 +426,16 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
     fgets(line,MAXLINE,fp);
     param_extract(tb,line);
 
+    //input count is multiplied by four here because that's the dimensionality of the interpolated grid
+    //but when we compare to tablength we want to use the non-interpolated count, which should match
+    //the user-provided N
     tb->input_count = tb->ninput_theta * tb->ninput_r2 * tb->ninput_r1 * 4;
+    if(tb->input_count/4 != tablength)
+    {
+        std::cout << "Provided input N: " << tablength << std::endl;
+        std::cout << "Actual table N  : " << tb->input_count << std::endl;
+        error->one(FLERR, "The N you provided in your input file does not match your table. Try again!");
+    }
 
     tb->energies_forces = (double*)(malloc(sizeof(double*) * tb->input_count)) ;
 
@@ -451,8 +464,7 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
 
                 sscanf(line, "%d %lg %lg %lg %lg %lg %lg %lg",
                        &itmp, &temp_a, &temp_r1, &temp_r2, &u, &f_theta, &f_r1, &f_r2);
-                //assert(index == (itmp*4));
-                assert(index == itmp);
+                assert(index == (itmp*4));
                 if(index == 0)
                 {
                     assert(temp_a == tb->angle_low);
@@ -465,9 +477,6 @@ void AngleTable3D::read_table(Table *tb, char *file, char *keyword)
                     assert(temp_r1 == tb->r1_high);
                     assert(temp_r2 == tb->r2_high);
                 }
-                //std::cout << index << std::endl;
-                //std::cout << line << std::endl;
-                //std::cout << i << " " << j << " " << k << std::endl;
             }
         }
     }
@@ -715,13 +724,6 @@ void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, doubl
         fraction_r1 = (r1 - (tb->r1_low + itable_r1 * tb->delta_r1)) * tb->inv_delta_r1;
         fraction_r2 = (r2 - (tb->r2_low + itable_r2 * tb->delta_r2)) * tb->inv_delta_r2;
 
-        /*
-        cout << fraction_theta << " " << theta << " " << tb->angle_low + itable_theta * tb->delta_theta << endl;
-        cout << fraction_r1 << " " << r1 << " " << tb->r1_low + itable_r1 * tb->delta_r1 << endl;
-        cout << fraction_r2 << " " << r2 << " " << tb->r2_low + itable_r2 * tb->delta_r2 << endl;
-        exit(10000);
-         */
-
         int index_000 = (itable_theta)     * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1)     * tb-> ninput_r2 * 4 + (itable_r2)     * 4;
         int index_001 = (itable_theta)     * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1)     * tb-> ninput_r2 * 4 + (itable_r2 + 1) * 4;
         int index_010 = (itable_theta)     * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2)     * 4;
@@ -730,6 +732,7 @@ void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, doubl
         int index_101 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1)     * tb-> ninput_r2 * 4 + (itable_r2 + 1) * 4;
         int index_110 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2)     * 4;
         int index_111 = (itable_theta + 1) * tb->ninput_r1 * tb->ninput_r2 * 4 + (itable_r1 + 1) * tb-> ninput_r2 * 4 + (itable_r2 + 1) * 4;
+
 
         u = 0.0;
         u+= (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000];
@@ -742,14 +745,14 @@ void AngleTable3D::uf_lookup(int type, double theta, double r1, double r2, doubl
         u+= (fraction_theta)   * (fraction_r1)   * (fraction_r2)   * tb->energies_forces[index_111];
 
         mdu_theta = 0.0;
-        mdu_theta+= (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000 + 1];
-        mdu_theta+= (1-fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_001 + 1];
-        mdu_theta+= (1-fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_010 + 1];
-        mdu_theta+= (1-fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_011 + 1];
-        mdu_theta+= (fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_100 + 1];
-        mdu_theta+= (fraction_theta) * (1-fraction_r1) * (fraction_r2) * tb->energies_forces[index_101 + 1];
-        mdu_theta+= (fraction_theta) * (fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_110 + 1];
-        mdu_theta+= (fraction_theta) * (fraction_r1) * (fraction_r2) * tb->energies_forces[index_111 + 1];
+        mdu_theta += (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000 + 1];
+        mdu_theta += (1-fraction_theta) * (1-fraction_r1) * (fraction_r2)   * tb->energies_forces[index_001 + 1];
+        mdu_theta += (1-fraction_theta) * (fraction_r1)   * (1-fraction_r2) * tb->energies_forces[index_010 + 1];
+        mdu_theta += (1-fraction_theta) * (fraction_r1)   * (fraction_r2)   * tb->energies_forces[index_011 + 1];
+        mdu_theta += (fraction_theta)   * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_100 + 1];
+        mdu_theta += (fraction_theta)   * (1-fraction_r1) * (fraction_r2)   * tb->energies_forces[index_101 + 1];
+        mdu_theta += (fraction_theta)   * (fraction_r1)   * (1-fraction_r2) * tb->energies_forces[index_110 + 1];
+        mdu_theta += (fraction_theta)   * (fraction_r1)   * (fraction_r2)   * tb->energies_forces[index_111 + 1];
 
         mdu_r1 = 0.0;
         mdu_r1+= (1-fraction_theta) * (1-fraction_r1) * (1-fraction_r2) * tb->energies_forces[index_000 + 2];

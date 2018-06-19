@@ -13,6 +13,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <iostream>
 #include "angle_harmonic.h"
 #include "atom.h"
 #include "neighbor.h"
